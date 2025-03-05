@@ -40,7 +40,7 @@ try {
     var scaleFactor = exportResolution / 72;
     
     // Base Y-coordinate adjustment - will be scaled based on font size
-    var baseYOffset = 12; // Base points for 12pt font (will be scaled for other sizes)
+    var baseYOffset = 13.5; // Base points for 12pt font (will be scaled for other sizes)
     var standardFontSize = 12; // Reference font size for scaling
     
     // Export as JPG
@@ -57,20 +57,38 @@ try {
               "\nPlease manually export your document as JPG to: " + jpgPathOnDisk);
     }
     
-    // Create output files
+    // Create output files - checking if they exist first
     var labelFile = new File(ocrDataFolder.fsName + "/Label.txt");
     var cacheFile = new File(ocrDataFolder.fsName + "/Cache.cach");
     var fileStateFile = new File(ocrDataFolder.fsName + "/fileState.txt");
     
-    // Open files for writing
+    // Check if files exist to determine if we should append
+    var labelFileExists = labelFile.exists;
+    var cacheFileExists = cacheFile.exists;
+    var fileStateExists = fileStateFile.exists;
+    
+    // Open files for appending if they exist, or writing if new
     labelFile.encoding = "UTF-8";
-    labelFile.open("w");
-    
     cacheFile.encoding = "UTF-8";
-    cacheFile.open("w");
-    
     fileStateFile.encoding = "UTF-8";
-    fileStateFile.open("w");
+    
+    if (labelFileExists) {
+        labelFile.open("a");
+    } else {
+        labelFile.open("w");
+    }
+    
+    if (cacheFileExists) {
+        cacheFile.open("a");
+    } else {
+        cacheFile.open("w");
+    }
+    
+    if (fileStateExists) {
+        fileStateFile.open("a");
+    } else {
+        fileStateFile.open("w");
+    }
     
     // Store text boxes with their coordinates
     var textBoxes = [];
@@ -599,13 +617,28 @@ try {
     // Format data for Label.txt and Cache.cach
     var ocrData = formatOCRData(jpgPathForLabels, textBoxes);
     
-    // Write the OCR data to both files
-    labelFile.write(ocrData);
-    cacheFile.write(ocrData);
+    // Write the OCR data to both files - append a newline if files already had content
+    if (labelFileExists && labelFile.length > 0) {
+        labelFile.write("\n" + ocrData);
+    } else {
+        labelFile.write(ocrData);
+    }
+    
+    if (cacheFileExists && cacheFile.length > 0) {
+        cacheFile.write("\n" + ocrData);
+    } else {
+        cacheFile.write(ocrData);
+    }
     
     // Generate fileState.txt content - just one line for the actual JPG
     var fileStateContent = jpgPathForLabels + "\t1";
-    fileStateFile.write(fileStateContent);
+    
+    // Add newline if file already exists and has content
+    if (fileStateExists && fileStateFile.length > 0) {
+        fileStateFile.write("\n" + fileStateContent);
+    } else {
+        fileStateFile.write(fileStateContent);
+    }
     
     // Close all files
     labelFile.close();
