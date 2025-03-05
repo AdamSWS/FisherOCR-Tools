@@ -1,6 +1,6 @@
 // InDesign Text Extraction for OCR Training with Font-Size Based Y-Scaling
 // Method 1: Whole frame for single-line text frames (NO Y-OFFSET)
-// Method 2: Line-by-line for multi-line text frames (WITH SCALED Y-OFFSET)
+// Method 2: Line-by-line for multi-line text frames (WITH SCALED Y-OFFSET only for fonts > 10pt)
 
 try {
     if (app.documents.length === 0) {
@@ -8,7 +8,7 @@ try {
     }
     
     // Debug info at start
-    alert("Starting text extraction script...\nUsing two different methods:\n- Method 1: Whole frame coordinates for single-line text (NO Y-OFFSET)\n- Method 2: Line-by-line coordinates for multi-line text (WITH SCALED Y-OFFSET)");
+    alert("Starting text extraction script...\nUsing two different methods:\n- Method 1: Whole frame coordinates for single-line text (NO Y-OFFSET)\n- Method 2: Line-by-line coordinates for multi-line text (WITH SCALED Y-OFFSET for fonts > 10pt only)");
     
     var doc = app.activeDocument;
     
@@ -41,7 +41,7 @@ try {
     
     // Base Y-coordinate adjustment - will be scaled based on font size
     var baseYOffset = 13.5; // Base points for 12pt font (will be scaled for other sizes)
-    var standardFontSize = 7; // Reference font size for scaling
+    var standardFontSize = 12; // Reference font size for scaling
     
     // Export as JPG
     try {
@@ -318,9 +318,12 @@ try {
                                     currentY = lineY1 - (frameLines[l-1].leading - frameLines[l-1].fontSize);
                                 }
                                 
-                                // Calculate scaling factor for Y-offset based on font size
-                                var fontScalingFactor = line.fontSize / standardFontSize;
-                                var scaledYOffset = baseYOffset * fontScalingFactor;
+                                // Only apply Y-offset if font size is greater than 10
+                                var scaledYOffset = 0;
+                                if (Math.floor(line.fontSize) >= 8) {
+                                    var fontScalingFactor = line.fontSize / standardFontSize;
+                                    scaledYOffset = baseYOffset * fontScalingFactor;
+                                }
                                 
                                 // Apply scaling factor for export resolution and add SCALED Y-offset for multiline text
                                 var scaledLineX1 = Math.round(lineX1 * scaleFactor);
@@ -380,9 +383,12 @@ try {
                                 // Move down for the next line - use exact leading value
                                 currentY = lineY1 + line.leading;
                                 
-                                // Calculate scaling factor for Y-offset based on font size
-                                var fontScalingFactor = line.fontSize / standardFontSize;
-                                var scaledYOffset = baseYOffset * fontScalingFactor;
+                                // Only apply Y-offset if font size is greater than 10
+                                var scaledYOffset = 0;
+                                if (Math.floor(line.fontSize) >= 8) {
+                                    var fontScalingFactor = line.fontSize / standardFontSize;
+                                    scaledYOffset = baseYOffset * fontScalingFactor;
+                                }
                                 
                                 // Apply scaling factor for export resolution and add SCALED Y-offset for multiline text
                                 var scaledLineX1 = Math.round(lineX1 * scaleFactor);
@@ -441,9 +447,12 @@ try {
                                 // Move down for the next line - use exact leading value
                                 currentY = lineY1 + line.leading;
                                 
-                                // Calculate scaling factor for Y-offset based on font size
-                                var fontScalingFactor = line.fontSize / standardFontSize;
-                                var scaledYOffset = baseYOffset * fontScalingFactor;
+                                // Only apply Y-offset if font size is greater than 10
+                                var scaledYOffset = 0;
+                                if (Math.floor(line.fontSize) >= 8) {
+                                    var fontScalingFactor = line.fontSize / standardFontSize;
+                                    scaledYOffset = baseYOffset * fontScalingFactor;
+                                }
                                 
                                 // Apply scaling factor for export resolution and add SCALED Y-offset for multiline text
                                 var scaledLineX1 = Math.round(lineX1 * scaleFactor);
@@ -491,9 +500,12 @@ try {
                                 startY = frameY1 + (frameHeight - totalHeight) / 2;
                             }
                             
-                            // Calculate scaling factor for Y-offset based on font size
-                            var fontScalingFactor = avgFontSize / standardFontSize;
-                            var scaledYOffset = baseYOffset * fontScalingFactor;
+                            // Only apply Y-offset if font size is greater than 10
+                            var scaledYOffset = 0;
+                            if (Math.floor(avgFontSize) >= 8) {
+                                var fontScalingFactor = avgFontSize / standardFontSize;
+                                scaledYOffset = baseYOffset * fontScalingFactor;
+                            }
                             
                             // Process each line
                             for (var l = 0; l < lines.length; l++) {
@@ -547,7 +559,7 @@ try {
                                 var lineY1 = startY + (l * avgLineHeight);
                                 var lineY2 = lineY1 + avgFontSize; // Exact font size
                                 
-                                // Apply scaling factor and add SCALED Y-offset for multiline text
+                                // Apply scaling factor and add SCALED Y-offset for multiline text with font > 10pt
                                 var scaledLineX1 = Math.round(lineX1 * scaleFactor);
                                 var scaledLineY1 = Math.round((lineY1 + scaledYOffset) * scaleFactor);
                                 var scaledLineX2 = Math.round(lineX2 * scaleFactor);
@@ -602,20 +614,22 @@ try {
                             var hasLineBreaks = frameText.indexOf("\r") >= 0;
                             
                             // Only apply Y-offset for multi-line text
-                            var fallbackYOffset = hasLineBreaks ? baseYOffset : 0;
+                            var fallbackYOffset = 0;
                             
-                            // If multi-line, try to estimate font size for scaling
-                            if (hasLineBreaks) {
-                                try {
-                                    var estFontSize = 12; // Default
-                                    if (textFrame.paragraphs.length > 0) {
-                                        estFontSize = textFrame.paragraphs[0].pointSize;
-                                        // Scale Y-offset based on font size
-                                        fallbackYOffset = baseYOffset * (estFontSize / standardFontSize);
-                                    }
-                                } catch (e) {
-                                    // Use default
+                            // Get estimated font size
+                            var estFontSize = 12; // Default
+                            
+                            try {
+                                if (textFrame.paragraphs.length > 0) {
+                                    estFontSize = textFrame.paragraphs[0].pointSize;
                                 }
+                            } catch (e) {
+                                // Use default
+                            }
+                            
+                            // Apply Y-offset only if multi-line and font size > 10
+                            if (hasLineBreaks && Math.floor(estFontSize) >= 8) {
+                                fallbackYOffset = baseYOffset * (estFontSize / standardFontSize);
                             }
                             
                             // For fallback, try to at least get accurate text width
@@ -643,12 +657,12 @@ try {
                                 }
                             }
                             
-                            // Convert to points and apply scaling with Y-offset only for multi-line text
+                            // Convert to points and apply scaling with Y-offset only for multi-line text with font size > 10
                             var yMin = Math.round((frameBounds[0] * 72 + fallbackYOffset) * scaleFactor);
                             var xMin = Math.round(fallbackX1 * scaleFactor);
                             var yMax = Math.round((frameBounds[2] * 72 + fallbackYOffset) * scaleFactor);
                             var xMax = Math.round(fallbackX2 * scaleFactor);
-                            
+
                             // Add the entire textframe as a fallback
                             textBoxes.push({
                                 text: frameText,
@@ -738,7 +752,7 @@ try {
           "Found " + textBoxes.length + " text elements in the document\n" +
           "Using two different methods:\n" +
           "- Single-line text: using entire text frame coordinates (NO Y-OFFSET)\n" +
-          "- Multi-line text: processing each line separately (WITH FONT-SCALED Y-OFFSET)\n" +
+          "- Multi-line text: processing each line separately (WITH FONT-SCALED Y-OFFSET for fonts > 10pt only)\n" +
           "Base Y-offset: " + baseYOffset + " points (scaled based on font size)");
     
 } catch (error) {
