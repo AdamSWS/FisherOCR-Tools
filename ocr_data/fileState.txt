@@ -1,0 +1,13 @@
+ocr_data/ARG_02_19_25_Big_159304_3_6_page_1.jpg	1
+ocr_data/ARG_02_19_25_Big_159304_2_7_page_1.jpg	1
+ocr_data/Cermak15_1_8.5X20.25_page_1.jpg	1
+ocr_data/Cermak12_2_8.5X20.25_page_1.jpg	1
+ocr_data/Cermak6_2_8.5X20.25_page_1.jpg	1
+ocr_data/Cermak4_4_022625_page_1.jpg	1
+ocr_data/Cermak4_3_022625_page_1.jpg	1
+ocr_data/Cermak4_2_022625_page_1.jpg	1
+ocr_data/Cermak4_1_022625_page_1.jpg	1
+ocr_data/Cermak2_2_3_163602_page_1.jpg	1
+ocr_data/Cermak2_2_3_163470_page_1.jpg	1
+ocr_data/Cermak2_1_4_163602_page_1.jpg	1
+ocr_data/Cermak2_1_4_163470_page_1.jpg	1
