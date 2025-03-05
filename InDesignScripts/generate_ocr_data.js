@@ -79,8 +79,8 @@ try {
     var scaleFactor = exportResolution / 72; // InDesign's native resolution is 72dpi
     
     // Base Y-coordinate adjustment - will be scaled based on font size
-    var baseYOffset = 0; // Base points for 12pt font (will be scaled for other sizes)
-    var standardFontSize = 16; // Reference font size for scaling
+    var baseYOffset = 14.5; // Base points for 12pt font (will be scaled for other sizes)
+    var standardFontSize = 12; // Reference font size for scaling
     
     // 0, 16
     // 13.5, 12
