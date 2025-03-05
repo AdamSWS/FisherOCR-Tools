@@ -1,5 +1,6 @@
 // InDesign Text Extraction for OCR Training with Coordinate Scaling
 // This script extracts text content and coordinates for OCR training
+// Supporting multiple pages, proper appending, and original coordinate handling
 
 try {
     if (app.documents.length === 0) {
@@ -17,17 +18,6 @@ try {
         ocrDataFolder.create();
     }
     
-    // Set up JPG export with same base name as the document
-    var jpgBaseName = doc.name.replace(/\.indd$/i, "") + ".jpg";
-    var jpgPathOnDisk = ocrDataFolder.fsName + "/" + jpgBaseName;
-    
-    // For file references in Label.txt and fileState.txt, include the folder name
-    var jpgPathForLabels = "ocr_data/" + jpgBaseName;
-    
-    // Get document dimensions (will be used for scaling)
-    var docWidth = doc.documentPreferences.pageWidth * 72; // Convert to points
-    var docHeight = doc.documentPreferences.pageHeight * 72; // Convert to points
-    
     // Set up export resolution (this affects scaling)
     var exportResolution = 150; // DPI
     
@@ -35,120 +25,241 @@ try {
     // InDesign's native resolution is 72dpi, so the scaling factor is exportResolution/72
     var scaleFactor = exportResolution / 72;
     
-    // Export as JPG
-    try {
-        // Set up basic export preferences
-        app.jpegExportPreferences.jpegQuality = JPEGOptionsQuality.MAXIMUM;
-        app.jpegExportPreferences.exportResolution = exportResolution;
-        app.jpegExportPreferences.jpegExportRange = ExportRangeOrAllPages.EXPORT_RANGE;
-        app.jpegExportPreferences.pageString = "1"; // Export first page
-        
-        // Export as JPG
-        doc.exportFile(ExportFormat.JPG, new File(jpgPathOnDisk), false);
-    } catch (e) {
-        alert("Error exporting JPG: " + e.message + 
-              "\nPlease manually export your document as JPG to: " + jpgPathOnDisk);
-    }
-    
-    // Create output files
+    // Create output files - using "a" mode for appending
     var labelFile = new File(ocrDataFolder.fsName + "/Label.txt");
     var cacheFile = new File(ocrDataFolder.fsName + "/Cache.cach");
     var fileStateFile = new File(ocrDataFolder.fsName + "/fileState.txt");
     
-    // Open files for writing
+    // Check if files exist and get their length
+    var labelExists = labelFile.exists;
+    var cacheExists = cacheFile.exists;
+    var fileStateExists = fileStateFile.exists;
+    
+    // Open files for appending
     labelFile.encoding = "UTF-8";
-    labelFile.open("w");
+    labelFile.open("a");
     
     cacheFile.encoding = "UTF-8";
-    cacheFile.open("w");
+    cacheFile.open("a");
     
     fileStateFile.encoding = "UTF-8";
-    fileStateFile.open("w");
+    fileStateFile.open("a");
     
-    // Store text boxes with their coordinates
-    var textBoxes = [];
+    // Check if files have content already and if they end with a newline
+    var labelHasContent = false;
+    var cacheHasContent = false;
+    var fileStateHasContent = false;
     
-    // Extract text from text frames in the document
-    for (var i = 0; i < doc.stories.length; i++) {
-        var story = doc.stories[i];
-        var storyContent = story.contents;
+    // If the files exist, check if they have content and if they end with a newline
+    if (labelExists && labelFile.length > 0) {
+        labelHasContent = true;
+        // Check if the file ends with a newline
+        labelFile.close();
+        var tempLabelFile = new File(ocrDataFolder.fsName + "/Label.txt");
+        tempLabelFile.encoding = "UTF-8";
+        tempLabelFile.open("r");
+        var labelContent = tempLabelFile.read();
+        tempLabelFile.close();
+        if (labelContent.length > 0 && labelContent.charAt(labelContent.length - 1) !== "\n") {
+            // If the file doesn't end with a newline, we'll need to add one
+            labelFile.open("a");
+            labelFile.write("\n");
+        } else {
+            labelFile.open("a");
+        }
+    } else {
+        labelFile.open("a");
+    }
+    
+    if (cacheExists && cacheFile.length > 0) {
+        cacheHasContent = true;
+        // Check if the file ends with a newline
+        cacheFile.close();
+        var tempCacheFile = new File(ocrDataFolder.fsName + "/Cache.cach");
+        tempCacheFile.encoding = "UTF-8";
+        tempCacheFile.open("r");
+        var cacheContent = tempCacheFile.read();
+        tempCacheFile.close();
+        if (cacheContent.length > 0 && cacheContent.charAt(cacheContent.length - 1) !== "\n") {
+            // If the file doesn't end with a newline, we'll need to add one
+            cacheFile.open("a");
+            cacheFile.write("\n");
+        } else {
+            cacheFile.open("a");
+        }
+    } else {
+        cacheFile.open("a");
+    }
+    
+    if (fileStateExists && fileStateFile.length > 0) {
+        fileStateHasContent = true;
+        // Check if the file ends with a newline
+        fileStateFile.close();
+        var tempFileStateFile = new File(ocrDataFolder.fsName + "/fileState.txt");
+        tempFileStateFile.encoding = "UTF-8";
+        tempFileStateFile.open("r");
+        var fileStateContent = tempFileStateFile.read();
+        tempFileStateFile.close();
+        if (fileStateContent.length > 0 && fileStateContent.charAt(fileStateContent.length - 1) !== "\n") {
+            // If the file doesn't end with a newline, we'll need to add one
+            fileStateFile.open("a");
+            fileStateFile.write("\n");
+        } else {
+            fileStateFile.open("a");
+        }
+    } else {
+        fileStateFile.open("a");
+    }
+    
+    // Process each page
+    var pageCount = doc.pages.length;
+    var processedJpgs = [];
+    
+    for (var pageIndex = 0; pageIndex < pageCount; pageIndex++) {
+        // Set up JPG export with document name and page number
+        var jpgBaseName = doc.name.replace(/\.indd$/i, "") + "_page" + (pageIndex + 1) + ".jpg";
+        var jpgPathOnDisk = ocrDataFolder.fsName + "/" + jpgBaseName;
         
-        // Check if story has content
-        if (storyContent && storyContent.toString().replace(/\s/g, '').length > 0) {
-            // Process each text frame in this story
-            for (var j = 0; j < story.textContainers.length; j++) {
-                var textFrame = story.textContainers[j];
-                
-                try {
-                    // Check if this frame is on a page (not on pasteboard)
-                    var parentPage = null;
+        // For file references in Label.txt and fileState.txt, include the folder name
+        var jpgPathForLabels = "ocr_data/" + jpgBaseName;
+        
+        // Get document dimensions for this page (used for scaling)
+        var currentPage = doc.pages[pageIndex];
+        var docWidth = (currentPage.bounds[3] - currentPage.bounds[1]) * 72; // Convert to points
+        var docHeight = (currentPage.bounds[2] - currentPage.bounds[0]) * 72; // Convert to points
+        
+        // Export current page as JPG
+        try {
+            // Set up basic export preferences
+            app.jpegExportPreferences.jpegQuality = JPEGOptionsQuality.MAXIMUM;
+            app.jpegExportPreferences.exportResolution = exportResolution;
+            app.jpegExportPreferences.jpegExportRange = ExportRangeOrAllPages.EXPORT_RANGE;
+            app.jpegExportPreferences.pageString = (pageIndex + 1).toString(); // Export current page
+            
+            // Export as JPG
+            doc.exportFile(ExportFormat.JPG, new File(jpgPathOnDisk), false);
+            processedJpgs.push(jpgBaseName);
+        } catch (e) {
+            alert("Error exporting JPG for page " + (pageIndex + 1) + ": " + e.message + 
+                  "\nPlease manually export your document page as JPG to: " + jpgPathOnDisk);
+        }
+        
+        // Store text boxes with their coordinates for this page
+        var textBoxes = [];
+        
+        // Get all text frames on this specific page
+        for (var i = 0; i < doc.stories.length; i++) {
+            var story = doc.stories[i];
+            var storyContent = story.contents;
+            
+            // Check if story has content
+            if (storyContent && storyContent.toString().replace(/\s/g, '').length > 0) {
+                // Process each text frame in this story
+                for (var j = 0; j < story.textContainers.length; j++) {
+                    var textFrame = story.textContainers[j];
+                    
                     try {
-                        parentPage = textFrame.parentPage;
-                        if (!parentPage) continue; // Skip frames not on a page
-                    } catch (e) {
-                        continue; // Skip frames not on a page
-                    }
-                    
-                    // Get geometric bounds [y1, x1, y2, x2] - InDesign uses this unusual order
-                    var bounds = textFrame.geometricBounds;
-                    
-                    // Convert to points and apply scaling
-                    var yMin = Math.round(bounds[0] * 72 * scaleFactor);
-                    var xMin = Math.round(bounds[1] * 72 * scaleFactor);
-                    var yMax = Math.round(bounds[2] * 72 * scaleFactor);
-                    var xMax = Math.round(bounds[3] * 72 * scaleFactor);
-                    
-                    // Get text in this specific frame
-                    var frameText = textFrame.contents;
-                    if (!frameText || frameText.toString().replace(/\s/g, '').length === 0) {
-                        continue; // Skip empty frames
-                    }
-                    
-                    // Detect lines in this text frame
-                    var lines = getTextLines(textFrame);
-                    
-                    for (var l = 0; l < lines.length; l++) {
-                        var lineHeight = (yMax - yMin) / lines.length;
-                        var lineY1 = yMin + (l * lineHeight);
-                        var lineY2 = lineY1 + lineHeight;
+                        // Check if this frame is on the current page (not on pasteboard or another page)
+                        var parentPage = null;
+                        try {
+                            parentPage = textFrame.parentPage;
+                            // Skip if not on a page or not on the current page
+                            if (!parentPage || parentPage !== currentPage) continue;
+                        } catch (e) {
+                            continue; // Skip frames not on a page
+                        }
                         
-                        textBoxes.push({
-                            text: lines[l],
-                            points: [
-                                [xMin, lineY1],  // Top-left
-                                [xMax, lineY1],  // Top-right
-                                [xMax, lineY2],  // Bottom-right
-                                [xMin, lineY2]   // Bottom-left
-                            ]
-                        });
+                        // Get geometric bounds [y1, x1, y2, x2] - InDesign uses this unusual order
+                        var bounds = textFrame.geometricBounds;
+                        
+                        // Convert to points and apply scaling (like the original script)
+                        var yMin = Math.round(bounds[0] * 72 * scaleFactor);
+                        var xMin = Math.round(bounds[1] * 72 * scaleFactor);
+                        var yMax = Math.round(bounds[2] * 72 * scaleFactor);
+                        var xMax = Math.round(bounds[3] * 72 * scaleFactor);
+                        
+                        // Get text in this specific frame
+                        var frameText = textFrame.contents;
+                        if (!frameText || frameText.toString().replace(/\s/g, '').length === 0) {
+                            continue; // Skip empty frames
+                        }
+                        
+                        // Detect lines in this text frame
+                        var lines = getTextLines(textFrame);
+                        
+                        for (var l = 0; l < lines.length; l++) {
+                            var lineHeight = (yMax - yMin) / Math.max(1, lines.length);
+                            var lineY1 = yMin + (l * lineHeight);
+                            var lineY2 = lineY1 + lineHeight;
+                            
+                            textBoxes.push({
+                                text: lines[l],
+                                points: [
+                                    [xMin, lineY1],  // Top-left
+                                    [xMax, lineY1],  // Top-right
+                                    [xMax, lineY2],  // Bottom-right
+                                    [xMin, lineY2]   // Bottom-left
+                                ]
+                            });
+                        }
+                    } catch (e) {
+                        // Skip problematic frames
                     }
-                } catch (e) {
-                    // Skip problematic frames
                 }
             }
         }
+        
+        // Format data for Label.txt and Cache.cach for this page
+        var ocrData = formatOCRData(jpgPathForLabels, textBoxes);
+        
+        // Write to Label.txt (newlines are now handled in the file initialization section)
+        if (labelHasContent || pageIndex > 0) {
+            labelFile.write(ocrData + "\n");
+        } else {
+            labelFile.write(ocrData + "\n");
+            labelHasContent = true;
+        }
+        
+        // Write to Cache.cach
+        if (cacheHasContent || pageIndex > 0) {
+            cacheFile.write(ocrData + "\n");
+        } else {
+            cacheFile.write(ocrData + "\n");
+            cacheHasContent = true;
+        }
+        
+        // Generate fileState.txt content - a line for each JPG
+        var fileStateEntry = jpgPathForLabels + "\t1";
+        
+        // Write to fileState.txt
+        if (fileStateHasContent || pageIndex > 0) {
+            fileStateFile.write(fileStateEntry + "\n");
+        } else {
+            fileStateFile.write(fileStateEntry + "\n");
+            fileStateHasContent = true;
+        }
     }
-    
-    // Format data for Label.txt and Cache.cach
-    var ocrData = formatOCRData(jpgPathForLabels, textBoxes);
-    
-    // Write the OCR data to both files
-    labelFile.write(ocrData);
-    cacheFile.write(ocrData);
-    
-    // Generate fileState.txt content - just one line for the actual JPG
-    var fileStateContent = jpgPathForLabels + "\t1\n";
-    fileStateFile.write(fileStateContent);
     
     // Close all files
     labelFile.close();
     cacheFile.close();
     fileStateFile.close();
     
-    alert("Text extraction complete!\n\n" + 
-          "JPG and OCR training data saved to: " + ocrDataFolder.fsName + "\n" +
-          "Created files: " + jpgBaseName + ", Label.txt, Cache.cach, fileState.txt\n\n" +
-          "Coordinates have been scaled to match the " + exportResolution + "dpi JPG");
+    // Build success message
+    var successMsg = "Text extraction complete!\n\n" + 
+                     "JPG and OCR training data saved to: " + ocrDataFolder.fsName + "\n" +
+                     "Files updated: ";
+    
+    // Add list of JPGs created
+    if (processedJpgs.length > 0) {
+        successMsg += processedJpgs.join(", ") + ", ";
+    }
+    
+    successMsg += "Label.txt, Cache.cach, fileState.txt\n\n" +
+                  "Processed " + pageCount + " pages at " + exportResolution + " dpi\n" +
+                  "Coordinates have been scaled to match the exported JPGs";
+    
+    alert(successMsg);
     
 } catch (error) {
     alert("Error: " + error.message);
