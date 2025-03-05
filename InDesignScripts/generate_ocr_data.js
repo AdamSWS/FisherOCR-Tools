@@ -41,7 +41,7 @@ try {
     
     // Base Y-coordinate adjustment - will be scaled based on font size
     var baseYOffset = 13.5; // Base points for 12pt font (will be scaled for other sizes)
-    var standardFontSize = 12; // Reference font size for scaling
+    var standardFontSize = 7; // Reference font size for scaling
     
     // Export as JPG
     try {
@@ -89,6 +89,10 @@ try {
     } else {
         fileStateFile.open("w");
     }
+    
+    // Create a hidden text field for string width measurement
+    var measuringFrame = doc.pages[0].textFrames.add();
+    measuringFrame.visible = false;
     
     // Store text boxes with their coordinates
     var textBoxes = [];
@@ -182,15 +186,26 @@ try {
                     
                     // DUAL METHODS APPROACH:
                     
-                    // METHOD 1: For single-line text frames, use the entire frame coordinates WITH NO Y-OFFSET
+                    // METHOD 1: For single-line text frames, use the exact string width instead of frame width
                     if (!hasMultipleLines) {
-                        // Scale WITHOUT applying Y-offset
-                        var yMin = Math.round(frameY1 * scaleFactor); // No Y-offset for single-line text
-                        var xMin = Math.round(frameX1 * scaleFactor);
-                        var yMax = Math.round(frameY2 * scaleFactor); // No Y-offset for single-line text
-                        var xMax = Math.round(frameX2 * scaleFactor);
+                        var textWidth = getExactTextWidth(textFrame, frameText);
                         
-                        // Add the entire frame as one text box
+                        // Determine the start X position based on text alignment
+                        var startX = frameX1;
+                        
+                        if (textAlignment === Justification.RIGHT_ALIGN || textAlignment === Justification.RIGHT_JUSTIFIED) {
+                            startX = frameX2 - textWidth;
+                        } else if (textAlignment === Justification.CENTER_ALIGN || textAlignment === Justification.CENTER_JUSTIFIED) {
+                            startX = frameX1 + (frameWidth - textWidth) / 2;
+                        }
+                        
+                        // Scale WITHOUT applying Y-offset for single-line text
+                        var yMin = Math.round(frameY1 * scaleFactor);
+                        var xMin = Math.round(startX * scaleFactor);
+                        var yMax = Math.round(frameY2 * scaleFactor);
+                        var xMax = Math.round((startX + textWidth) * scaleFactor);
+                        
+                        // Add the text with accurate width
                         textBoxes.push({
                             text: frameText,
                             points: [
@@ -239,17 +254,8 @@ try {
                                 maxFontSize = fontSize;
                             }
                             
-                            // Calculate line width
-                            var lineWidth = 0;
-                            try {
-                                if (line.length > 0) {
-                                    lineWidth = getLineWidth(line);
-                                } else {
-                                    lineWidth = lineText.length * fontSize * 0.6;
-                                }
-                            } catch (e) {
-                                lineWidth = lineText.length * fontSize * 0.6;
-                            }
+                            // Get exact text width for this line using an accurate measurement
+                            var lineWidth = getExactTextWidth(line, lineText);
                             
                             // Store all line information
                             frameLines.push({
@@ -493,8 +499,20 @@ try {
                             for (var l = 0; l < lines.length; l++) {
                                 var lineText = lines[l];
                                 
-                                // Calculate line dimensions
-                                var lineWidth = lineText.length * avgFontSize * 0.6;
+                                // Measure the exact width of this line text
+                                // Create measurements for this specific line
+                                measuringFrame.contents = lineText;
+                                measuringFrame.paragraphs[0].pointSize = avgFontSize;
+                                
+                                // Get accurate text width
+                                var lineWidth = 0;
+                                try {
+                                    // Use our helper to get exact width
+                                    lineWidth = getExactTextWidth(measuringFrame, lineText);
+                                } catch (e) {
+                                    // Fallback to estimate
+                                    lineWidth = lineText.length * avgFontSize * 0.6;
+                                }
                                 
                                 // Calculate horizontal position based on alignment
                                 var lineX1 = frameX1;
@@ -547,11 +565,22 @@ try {
                                 });
                             }
                         } else {
-                            // Single line fallback - use the whole frame WITHOUT Y-OFFSET
+                            // Single line fallback - use accurate measurement
+                            // Measure the exact width of this text
+                            var exactWidth = getExactTextWidth(textFrame, frameText);
+                            var startX = frameX1;
+                            
+                            // Adjust X position based on alignment
+                            if (textAlignment === Justification.RIGHT_ALIGN || textAlignment === Justification.RIGHT_JUSTIFIED) {
+                                startX = frameX2 - exactWidth;
+                            } else if (textAlignment === Justification.CENTER_ALIGN || textAlignment === Justification.CENTER_JUSTIFIED) {
+                                startX = frameX1 + (frameWidth - exactWidth) / 2;
+                            }
+                            
                             var yMin = Math.round(frameY1 * scaleFactor); // No Y-offset for single-line text
-                            var xMin = Math.round(frameX1 * scaleFactor);
+                            var xMin = Math.round(startX * scaleFactor);
                             var yMax = Math.round(frameY2 * scaleFactor); // No Y-offset for single-line text
-                            var xMax = Math.round(frameX2 * scaleFactor);
+                            var xMax = Math.round((startX + exactWidth) * scaleFactor);
                             
                             textBoxes.push({
                                 text: frameText,
@@ -589,11 +618,36 @@ try {
                                 }
                             }
                             
+                            // For fallback, try to at least get accurate text width
+                            var fallbackWidth = frameWidth;
+                            try {
+                                if (!hasLineBreaks) {
+                                    // Only measure width for single line text
+                                    fallbackWidth = getExactTextWidth(textFrame, frameText);
+                                }
+                            } catch (e) {
+                                // Use frame width as fallback
+                            }
+                            
+                            // Calculate X position based on alignment
+                            var fallbackX1 = frameX1;
+                            var fallbackX2 = fallbackX1 + fallbackWidth;
+                            
+                            if (!hasLineBreaks) {
+                                if (textAlignment === Justification.RIGHT_ALIGN || textAlignment === Justification.RIGHT_JUSTIFIED) {
+                                    fallbackX1 = frameX2 - fallbackWidth;
+                                    fallbackX2 = frameX2;
+                                } else if (textAlignment === Justification.CENTER_ALIGN || textAlignment === Justification.CENTER_JUSTIFIED) {
+                                    fallbackX1 = frameX1 + (frameWidth - fallbackWidth) / 2;
+                                    fallbackX2 = fallbackX1 + fallbackWidth;
+                                }
+                            }
+                            
                             // Convert to points and apply scaling with Y-offset only for multi-line text
                             var yMin = Math.round((frameBounds[0] * 72 + fallbackYOffset) * scaleFactor);
-                            var xMin = Math.round(frameBounds[1] * 72 * scaleFactor);
+                            var xMin = Math.round(fallbackX1 * scaleFactor);
                             var yMax = Math.round((frameBounds[2] * 72 + fallbackYOffset) * scaleFactor);
-                            var xMax = Math.round(frameBounds[3] * 72 * scaleFactor);
+                            var xMax = Math.round(fallbackX2 * scaleFactor);
                             
                             // Add the entire textframe as a fallback
                             textBoxes.push({
@@ -613,33 +667,66 @@ try {
             }
         }
     }
+
+    // Remove measuring frame when done
+    if (measuringFrame && measuringFrame.isValid) {
+        measuringFrame.remove();
+    }
     
     // Format data for Label.txt and Cache.cach
     var ocrData = formatOCRData(jpgPathForLabels, textBoxes);
     
     // Write the OCR data to both files - append a newline if files already had content
+    // Modified writing code for Label.txt
     if (labelFileExists && labelFile.length > 0) {
-        labelFile.write("\n" + ocrData);
+        // Check if the file already ends with a newline
+        labelFile.seek(labelFile.length - 1);
+        var lastChar = labelFile.read(1);
+        if (lastChar === "\n") {
+            // If the file already ends with a newline, just write the content without adding another
+            labelFile.write(ocrData);
+        } else {
+            // If the file doesn't end with a newline, add one before the new content
+            labelFile.write("\n" + ocrData);
+        }
     } else {
         labelFile.write(ocrData);
     }
-    
+
+    // Same for Cache.cach
     if (cacheFileExists && cacheFile.length > 0) {
-        cacheFile.write("\n" + ocrData);
+        // Check if the file already ends with a newline
+        cacheFile.seek(cacheFile.length - 1);
+        var lastChar = cacheFile.read(1);
+        if (lastChar === "\n") {
+            // If the file already ends with a newline, just write the content without adding another
+            cacheFile.write(ocrData);
+        } else {
+            // If the file doesn't end with a newline, add one before the new content
+            cacheFile.write("\n" + ocrData);
+        }
     } else {
         cacheFile.write(ocrData);
     }
-    
+
     // Generate fileState.txt content - just one line for the actual JPG
     var fileStateContent = jpgPathForLabels + "\t1";
-    
-    // Add newline if file already exists and has content
+
+    // Same for fileState.txt
     if (fileStateExists && fileStateFile.length > 0) {
-        fileStateFile.write("\n" + fileStateContent);
+        // Check if the file already ends with a newline
+        fileStateFile.seek(fileStateFile.length - 1);
+        var lastChar = fileStateFile.read(1);
+        if (lastChar === "\n") {
+            // If the file already ends with a newline, just write the content without adding another
+            fileStateFile.write(fileStateContent);
+        } else {
+            // If the file doesn't end with a newline, add one before the new content
+            fileStateFile.write("\n" + fileStateContent);
+        }
     } else {
         fileStateFile.write(fileStateContent);
     }
-    
     // Close all files
     labelFile.close();
     cacheFile.close();
@@ -656,6 +743,104 @@ try {
     
 } catch (error) {
     alert("Error: " + error.message);
+}
+
+/**
+ * Get the exact width of a text string
+ * This function calculates the actual width of text rather than using the frame width
+ */
+function getExactTextWidth(textObj, text) {
+    var width = 0;
+    
+    try {
+        // Method 1: Get width by character-by-character measurement
+        if (textObj.characters && textObj.characters.length > 0) {
+            // First try to get actual bounds of the text
+            width = 0;
+            var fontInfo = {};
+            
+            // Get font settings from first character for baseline
+            var basePointSize = textObj.characters[0].pointSize;
+            var baseFont = textObj.characters[0].appliedFont;
+            
+            // Iterate through each character to calculate accurate width
+            for (var i = 0; i < text.length; i++) {
+                var charWidth = basePointSize * 0.6; // Default approximate width
+                
+                try {
+                    // Get actual character
+                    var currentChar = text.charAt(i);
+                    
+                    // Try to find this character in the text object to get its actual metrics
+                    for (var j = 0; j < textObj.characters.length; j++) {
+                        if (textObj.characters[j].contents === currentChar) {
+                            var character = textObj.characters[j];
+                            
+                            // Calculate width based on font and scaling
+                            charWidth = character.pointSize * 0.6; // Base width
+                            
+                            // Apply horizontal scaling
+                            if (character.horizontalScale) {
+                                charWidth *= character.horizontalScale / 100;
+                            }
+                            
+                            // Apply tracking (kerning)
+                            if (character.tracking) {
+                                charWidth += (character.pointSize * character.tracking / 1000);
+                            }
+                            
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    // Fallback to approximation
+                }
+                
+                width += charWidth;
+            }
+            
+            // Add a small buffer for accuracy (5%)
+            width *= 1.05;
+        } 
+        // Method 2: Use the text frame's native width if it's a tight-fitting frame
+        else if (textObj.geometricBounds) {
+            var bounds = textObj.geometricBounds;
+            var frameWidth = (bounds[3] - bounds[1]) * 72;
+            
+            // Check if frame is approximately the right size
+            if (text.length * 10 <= frameWidth && frameWidth <= text.length * 25) { 
+                // Frame width seems reasonable for the text
+                width = frameWidth;
+            } else {
+                // Otherwise estimate based on character count and font size
+                var estFontSize = 12;
+                try {
+                    if (textObj.paragraphs && textObj.paragraphs.length > 0) {
+                        estFontSize = textObj.paragraphs[0].pointSize;
+                    }
+                } catch (e) {
+                    // Use default size
+                }
+                width = text.length * estFontSize * 0.6;
+            }
+        } else {
+            // Fallback estimation
+            var estFontSize = 12;
+            try {
+                if (textObj.paragraphs && textObj.paragraphs.length > 0) {
+                    estFontSize = textObj.paragraphs[0].pointSize;
+                }
+            } catch (e) {
+                // Use default size
+            }
+            width = text.length * estFontSize * 0.6;
+        }
+    } catch (e) {
+        // Ultimate fallback - estimate based on character count
+        width = text.length * 7.2; // 12pt * 0.6 scaling factor
+    }
+    
+    return width;
 }
 
 /**
